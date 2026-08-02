@@ -6,11 +6,14 @@ const {
   LinuxPipeWireListener,
   enrichPipeWireNodes,
   findCodexOutputNode,
+  findVoiceOutputNode,
   isCodexOutputNode,
   isCodexProcessTree,
+  isVoiceOutputNode,
   normalizeRms,
   pcm16Rms,
 } = require("./linux-pipewire-listener.cjs");
+const { pipeWireSourceFromProperties } = require("./voice-source.cjs");
 
 function pipeWireNode(id, properties, state = "idle") {
   return {
@@ -115,6 +118,46 @@ test("calculates and normalizes signed 16-bit PCM amplitude", () => {
   assert.equal(normalizeRms(0.001), 0);
   assert.ok(normalizeRms(0.1) > 0.7);
   assert.equal(normalizeRms(1), 1);
+});
+
+test("matches a custom process pattern for local voice apps", () => {
+  const localApp = pipeWireNode(50, {
+    "application.name": "Local TTS",
+    "application.process.binary": "local-tts",
+    "media.class": "Stream/Output/Audio",
+    "object.serial": 150,
+  }, "running");
+  const pattern = /local-tts/i;
+  assert.equal(isCodexOutputNode(localApp, null, pattern), true);
+  assert.equal(isCodexOutputNode(localApp), false);
+  assert.equal(findCodexOutputNode([localApp], null, pattern), localApp);
+});
+
+test("selects one configured PipeWire stream even when application names match", () => {
+  const voice = pipeWireNode(60, {
+    "application.name": "Electron",
+    "application.process.binary": "voice-ui",
+    "media.class": "Stream/Output/Audio",
+    "node.name": "voice-output",
+    "object.serial": 160,
+  });
+  const music = pipeWireNode(61, {
+    "application.name": "Electron",
+    "application.process.binary": "music-ui",
+    "media.class": "Stream/Output/Audio",
+    "node.name": "music-output",
+    "object.serial": 161,
+  });
+  const source = pipeWireSourceFromProperties(voice.info.props);
+  const selected = {
+    mode: "application",
+    process_pattern: null,
+    source_id: source.id,
+    source_name: source.name,
+  };
+  assert.equal(isVoiceOutputNode(voice, selected), true);
+  assert.equal(isVoiceOutputNode(music, selected), false);
+  assert.equal(findVoiceOutputNode([music, voice], selected), voice);
 });
 
 test("does not emit duplicate listener status updates", () => {

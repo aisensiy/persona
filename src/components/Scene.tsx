@@ -1,17 +1,28 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { useThree } from '@react-three/fiber';
-import { Environment, OrbitControls } from '@react-three/drei';
+import { Canvas, useThree } from '@react-three/fiber';
+import {
+  ContactShadows,
+  Environment,
+  OrbitControls,
+} from '@react-three/drei';
 import dawnEnvironment from '@pmndrs/assets/hdri/dawn.exr';
 import * as THREE from 'three';
 import { Avatar } from './Avatar';
-import type { AnimationType } from '../animation-catalog';
+import type { PlayableAnimationType } from '../animation-catalog';
 import { calculateFullBodyFraming } from '../camera-framing';
+import { resolveLightingSettings } from '../settings-defaults';
 
 interface SceneProps {
-  animation: AnimationType;
+  animation: PlayableAnimationType;
   animationRequest: number;
+  animationUrls?: readonly string[];
   audioLevel: number;
+  characterSize: number;
+  enablePan?: boolean;
+  framingMargin?: number;
+  groundShadow?: boolean;
+  lighting?: PersonaLightingSettings;
+  modelUrl: string;
   onAnimationComplete: () => void;
   playback: 'loop' | 'once';
   speaking: boolean;
@@ -22,6 +33,12 @@ interface TargetControls {
   update: () => void;
 }
 
+interface Grounding {
+  far: number;
+  position: [number, number, number];
+  scale: number;
+}
+
 function supportsTarget(controls: unknown): controls is TargetControls {
   if (!controls || typeof controls !== 'object') return false;
   const candidate = controls as Partial<TargetControls>;
@@ -29,16 +46,60 @@ function supportsTarget(controls: unknown): controls is TargetControls {
     typeof candidate.update === 'function';
 }
 
-function FullBodyCamera({ object }: { object: THREE.Object3D | null }) {
+function LightingController({
+  lighting,
+}: {
+  lighting: PersonaLightingSettings;
+}) {
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
+    gl.toneMapping =
+      lighting.tone_mapping === 'aces'
+        ? THREE.ACESFilmicToneMapping
+        : THREE.NoToneMapping;
+    gl.toneMappingExposure = lighting.exposure;
+    gl.outputColorSpace = THREE.SRGBColorSpace;
+    // eslint-disable-next-line react-hooks/immutability
+    scene.environmentIntensity = lighting.environment_enabled
+      ? lighting.environment_intensity
+      : 0;
+  }, [
+    gl,
+    scene,
+    lighting.tone_mapping,
+    lighting.exposure,
+    lighting.environment_enabled,
+    lighting.environment_intensity,
+  ]);
+
+  return null;
+}
+
+function FullBodyCamera({
+  characterSize,
+  framingMargin,
+  object,
+}: {
+  characterSize: number;
+  framingMargin: number;
+  object: THREE.Object3D | null;
+}) {
   const getThreeState = useThree((state) => state.get);
   const controlsReady = useThree((state) => Boolean(state.controls));
   const framedObject = useRef<THREE.Object3D | null>(null);
+  const framedCharacterSize = useRef<number | null>(null);
+  const framedMargin = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const { camera, controls } = getThreeState();
     if (
       !object ||
-      framedObject.current === object ||
+      (framedObject.current === object &&
+        framedCharacterSize.current === characterSize &&
+        framedMargin.current === framingMargin) ||
       !(camera instanceof THREE.PerspectiveCamera) ||
       !supportsTarget(controls)
     ) {
@@ -53,8 +114,8 @@ function FullBodyCamera({ object }: { object: THREE.Object3D | null }) {
       box,
       camera.fov,
       camera.aspect,
-      1.12,
-      1.5,
+      framingMargin,
+      1.5 * characterSize,
     );
     camera.position.copy(framing.position);
     camera.near = Math.max(0.01, framing.distance / 100);
@@ -65,15 +126,32 @@ function FullBodyCamera({ object }: { object: THREE.Object3D | null }) {
     controls.target.copy(framing.target);
     controls.update();
     framedObject.current = object;
-  }, [controlsReady, getThreeState, object]);
+    framedCharacterSize.current = characterSize;
+    framedMargin.current = framingMargin;
+  }, [characterSize, controlsReady, framingMargin, getThreeState, object]);
 
   return null;
 }
 
 export function Scene(props: SceneProps) {
+  const lighting = resolveLightingSettings(props.lighting);
   const [avatarScene, setAvatarScene] = useState<THREE.Object3D | null>(null);
+  const [grounding, setGrounding] = useState<Grounding | null>(null);
   const handleAvatarReady = useCallback((scene: THREE.Object3D) => {
     setAvatarScene(scene);
+    scene.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(scene);
+    if (box.isEmpty()) {
+      setGrounding(null);
+      return;
+    }
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    setGrounding({
+      far: Math.max(size.y, 1),
+      position: [center.x, box.min.y + 0.005, center.z],
+      scale: Math.max(size.x, size.z, 0.8) * 1.8,
+    });
   }, []);
 
   return (
@@ -83,15 +161,19 @@ export function Scene(props: SceneProps) {
       gl={{
         antialias: true,
         alpha: true,
-        toneMapping: THREE.NoToneMapping,
+        toneMapping: lighting.tone_mapping === 'aces'
+          ? THREE.ACESFilmicToneMapping
+          : THREE.NoToneMapping,
+        toneMappingExposure: lighting.exposure,
         outputColorSpace: THREE.SRGBColorSpace,
       }}
       style={{ background: 'transparent' }}
     >
+      <LightingController lighting={lighting} />
       <directionalLight
         color={[1, 1, 1]}
         position={[-3, 3, 3]}
-        intensity={Math.PI}
+        intensity={lighting.key_light_intensity}
       />
       <ambientLight
         color={[
@@ -99,16 +181,35 @@ export function Scene(props: SceneProps) {
           0.0036765073221525194,
           0.0036765073221525194,
         ]}
-        intensity={Math.PI}
+        intensity={lighting.ambient_intensity}
       />
-      <Environment files={dawnEnvironment} />
-      <FullBodyCamera object={avatarScene} />
+      {lighting.environment_enabled && (
+        <Environment files={dawnEnvironment} />
+      )}
+      <FullBodyCamera
+        characterSize={props.characterSize}
+        framingMargin={props.framingMargin ?? 1.12}
+        object={avatarScene}
+      />
       <Avatar {...props} onReady={handleAvatarReady} />
+      {props.groundShadow && grounding && (
+        <ContactShadows
+          blur={2.4}
+          color="#050506"
+          far={grounding.far}
+          frames={1}
+          key={`${props.modelUrl}-ground-shadow`}
+          opacity={0.42}
+          position={grounding.position}
+          resolution={256}
+          scale={grounding.scale}
+        />
+      )}
       <OrbitControls
         makeDefault
         enableDamping
         dampingFactor={0.08}
-        enablePan
+        enablePan={props.enablePan ?? true}
         enableZoom
         minDistance={1.4}
         maxDistance={12}

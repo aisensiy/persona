@@ -2,22 +2,44 @@
 
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const {
+  DEFAULT_VOICE_APP_PATTERN,
+  configuredPattern,
+  normalizeVoiceSource,
+  processMatchesSource,
+} = require("./voice-source.cjs");
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_VOICE_APP_PATTERN =
-  /(?:^|[\\/\s._=-])(?:codex(?:-desktop)?|chatgpt|openai(?:-codex)?)(?=$|[\\/\s._=-])/i;
 
 function parseMacProcessList(output) {
   return output
     .split(/\r?\n/)
-    .map((line) => /^\s*(\d+)\s+(\d+)\s+(\S+)(?:\s+(.*))?$/.exec(line))
+    .map((line) => /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line))
     .filter(Boolean)
     .map((match) => ({
       pid: Number(match[1]),
       parentId: Number(match[2]),
       name: match[3],
-      command: match[4] ?? "",
+      executable: match[3],
+      command: "",
     }));
+}
+
+function parseMacCommandList(output) {
+  return new Map(
+    output
+      .split(/\r?\n/)
+      .map((line) => /^\s*(\d+)\s+(.+?)\s*$/.exec(line))
+      .filter(Boolean)
+      .map((match) => [Number(match[1]), match[2]]),
+  );
+}
+
+function mergeMacProcessCommands(processes, commands) {
+  return processes.map((process) => ({
+    ...process,
+    command: commands.get(process.pid) ?? "",
+  }));
 }
 
 function parseWindowsProcessList(output) {
@@ -29,6 +51,7 @@ function parseWindowsProcessList(output) {
       pid: Number(process.ProcessId),
       parentId: Number(process.ParentProcessId),
       name: String(process.Name ?? ""),
+      executable: String(process.ExecutablePath ?? process.Name ?? ""),
       command: String(process.CommandLine ?? ""),
     }))
     .filter((process) => Number.isInteger(process.pid) && process.pid > 0);
@@ -36,17 +59,30 @@ function parseWindowsProcessList(output) {
 
 function identityMatches(process, pattern = DEFAULT_VOICE_APP_PATTERN) {
   pattern.lastIndex = 0;
-  return pattern.test(`${process.name} ${process.command}`);
+  return pattern.test(
+    `${process.name} ${process.executable ?? ""} ${process.command}`,
+  );
 }
 
-function selectVoiceProcessTree(processes, {
-  ownProcessId = process.pid,
-  pattern = DEFAULT_VOICE_APP_PATTERN,
-} = {}) {
+function selectVoiceProcessTree(
+  processes,
+  {
+    ownProcessId = process.pid,
+    pattern = DEFAULT_VOICE_APP_PATTERN,
+    platform = process.platform,
+    sourceId = null,
+  } = {},
+) {
   const byId = new Map(processes.map((entry) => [entry.pid, entry]));
   const directlyMatched = new Set(
     processes
-      .filter((entry) => entry.pid !== ownProcessId && identityMatches(entry, pattern))
+      .filter(
+        (entry) =>
+          entry.pid !== ownProcessId &&
+          (sourceId
+            ? processMatchesSource(entry, platform, sourceId)
+            : identityMatches(entry, pattern)),
+      )
       .map((entry) => entry.pid),
   );
   const matched = new Set();
@@ -74,33 +110,28 @@ function selectVoiceProcessTree(processes, {
   };
 }
 
-function configuredPattern(environment = process.env) {
-  const source = environment.PERSONA_TARGET_PROCESS_PATTERN;
-  if (!source) return DEFAULT_VOICE_APP_PATTERN;
-  try {
-    return new RegExp(source, "i");
-  } catch {
-    return DEFAULT_VOICE_APP_PATTERN;
-  }
-}
-
-async function discoverVoiceProcesses({
+async function listPlatformProcesses({
   platform = process.platform,
   run = execFileAsync,
-  environment = process.env,
-  ownProcessId = process.pid,
 } = {}) {
-  let processes;
   if (platform === "darwin") {
-    const { stdout } = await run("ps", ["-axo", "pid=,ppid=,comm=,args="], {
+    const options = {
       encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
       timeout: 3_000,
-    });
-    processes = parseMacProcessList(stdout);
-  } else if (platform === "win32") {
+    };
+    const [identityResult, commandResult] = await Promise.all([
+      run("ps", ["-axo", "pid=,ppid=,comm="], options),
+      run("ps", ["-axo", "pid=,args="], options),
+    ]);
+    return mergeMacProcessCommands(
+      parseMacProcessList(identityResult.stdout),
+      parseMacCommandList(commandResult.stdout),
+    );
+  }
+  if (platform === "win32") {
     const command =
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress";
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress";
     const { stdout } = await run(
       "powershell.exe",
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -111,14 +142,27 @@ async function discoverVoiceProcesses({
         windowsHide: true,
       },
     );
-    processes = parseWindowsProcessList(stdout);
-  } else {
-    return { pids: [], rootPids: [] };
+    return parseWindowsProcessList(stdout);
   }
+  return [];
+}
 
+async function discoverVoiceProcesses({
+  platform = process.platform,
+  run = execFileAsync,
+  environment = process.env,
+  ownProcessId = process.pid,
+  pattern = null,
+  voiceSource = null,
+} = {}) {
+  const processes = await listPlatformProcesses({ platform, run });
+  const selected = normalizeVoiceSource(voiceSource);
   return selectVoiceProcessTree(processes, {
     ownProcessId,
-    pattern: configuredPattern(environment),
+    platform,
+    sourceId:
+      selected.mode === "application" ? selected.source_id : null,
+    pattern: pattern ?? configuredPattern(environment),
   });
 }
 
@@ -127,6 +171,9 @@ module.exports = {
   configuredPattern,
   discoverVoiceProcesses,
   identityMatches,
+  listPlatformProcesses,
+  mergeMacProcessCommands,
+  parseMacCommandList,
   parseMacProcessList,
   parseWindowsProcessList,
   selectVoiceProcessTree,
