@@ -12,7 +12,9 @@ export function useVrmLoader(url: string): VRM | null {
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) return null;
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
-    VRMUtils.combineSkeletons(vrm.scene);
+    // combineSkeletons corrupts MMD-converted rigs (non-normalized rest
+    // transforms, e.g. Remiel's wing chains) and our models ship a single
+    // skin anyway, so there is nothing to combine.
     VRMUtils.combineMorphs(vrm);
     VRMUtils.rotateVRM0(vrm);
     return vrm;
