@@ -6,6 +6,7 @@ import {
 } from 'react';
 import { Scene } from './components/Scene';
 import {
+  animationUrlsForModel,
   animationUrlsForType,
   immediateVoiceAnimation,
   type AnimationType,
@@ -155,19 +156,36 @@ export function App() {
     () => animationUrlsForType(settings.animations, animation),
     [animation, settings.animations],
   );
+  const modelAnimationUrls = useMemo(
+    () =>
+      animationUrlsForModel(
+        animation,
+        configuredAnimationUrls,
+        defaultModel,
+      ),
+    [animation, configuredAnimationUrls, defaultModel],
+  );
   const animationUrls =
-    bodyOverride?.animationUrls ?? configuredAnimationUrls;
+    bodyOverride?.animationUrls ?? modelAnimationUrls;
+  // The scheduler owns the transition back to Idle, so its fallback clips need
+  // the same per-model override the requested Idle animation gets.
   const idleAnimationUrls = useMemo(
-    () => animationUrlsForType(settings.animations, 'IDLE'),
-    [settings.animations],
+    () =>
+      animationUrlsForModel(
+        'IDLE',
+        animationUrlsForType(settings.animations, 'IDLE'),
+        defaultModel,
+      ),
+    [defaultModel, settings.animations],
   );
   const preloadAnimationUrls = useMemo(
     () => [
-      ...new Set(
-        settings.animations.flatMap((configured) => configured.asset_urls),
-      ),
+      ...new Set([
+        ...settings.animations.flatMap((configured) => configured.asset_urls),
+        ...idleAnimationUrls,
+      ]),
     ],
-    [settings.animations],
+    [idleAnimationUrls, settings.animations],
   );
   // A held expression outranks the expression a newly started action carries,
   // so an action that begins mid-hold plays its body animation without

@@ -33,6 +33,16 @@ export function animationUrlSignature(
   return JSON.stringify(animationUrls ?? []);
 }
 
+export function animationUrlsForModel(
+  type: PlayableAnimationType,
+  configuredUrls: readonly string[],
+  model?: Pick<PersonaModelSettings, 'idle_asset_url'> | null,
+): readonly string[] {
+  return type === 'IDLE' && model?.idle_asset_url
+    ? [model.idle_asset_url]
+    : configuredUrls;
+}
+
 export function randomAnimationUrl(
   choices: readonly string[],
   previous: string | null = null,

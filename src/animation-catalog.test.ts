@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   animationExpression,
   animationUrlSignature,
+  animationUrlsForModel,
   animationUrlsForType,
   immediateVoiceAnimation,
   randomAnimationUrl,
@@ -101,6 +102,28 @@ describe('Persona animation contract', () => {
       expressionName: null,
       expressionWeight: 1,
     });
+  });
+
+  it('uses a model idle override only for the idle role', () => {
+    expect(
+      animationUrlsForModel(
+        'IDLE',
+        ['global-idle.vrma'],
+        { idle_asset_url: 'ellen-idle.vrma' },
+      ),
+    ).toEqual(['ellen-idle.vrma']);
+
+    expect(
+      animationUrlsForModel('IDLE', ['global-idle.vrma'], {}),
+    ).toEqual(['global-idle.vrma']);
+
+    expect(
+      animationUrlsForModel(
+        'TALK',
+        ['talk1.vrma', 'talk2.vrma'],
+        { idle_asset_url: 'ellen-idle.vrma' },
+      ),
+    ).toEqual(['talk1.vrma', 'talk2.vrma']);
   });
 });
 

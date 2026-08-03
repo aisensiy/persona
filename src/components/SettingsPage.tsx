@@ -19,6 +19,7 @@ import { VoiceSection } from './settings/VoiceSection';
 import { VroidConditionsOfUse } from './settings/VroidCharacters';
 import {
   animationExpression,
+  animationUrlsForModel,
   animationUrlsForType,
   type PlayableAnimationType,
 } from '../animation-catalog';
@@ -281,6 +282,10 @@ export function SettingsPage() {
     () => animationUrlsForType(settings.animations, 'IDLE'),
     [settings.animations],
   );
+  const selectedModelIdleUrls = useMemo(
+    () => animationUrlsForModel('IDLE', idleAnimationUrls, selectedModel),
+    [idleAnimationUrls, selectedModel],
+  );
   const previewClip = previewAnimation?.clips.find(
     (clip) => clip.id === previewClipId,
   );
@@ -290,8 +295,8 @@ export function SettingsPage() {
       ? [libraryPreviewClip.asset_url]
       : previewClip
         ? [previewClip.asset_url]
-        : idleAnimationUrls,
-    [idleAnimationUrls, libraryPreviewClip, previewClip],
+        : selectedModelIdleUrls,
+    [selectedModelIdleUrls, libraryPreviewClip, previewClip],
   );
 
   const updateSnapshot = useCallback((snapshot: PersonaSettingsSnapshot) => {
