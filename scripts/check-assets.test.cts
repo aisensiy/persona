@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,7 +29,11 @@ interface AssetManifest {
 }
 
 function readManifest(manifestPath: string): AssetManifest {
-  const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  return parseManifest(fs.readFileSync(manifestPath, 'utf8'));
+}
+
+function parseManifest(json: string): AssetManifest {
+  const parsed: unknown = JSON.parse(json);
   if (
     !isRecord(parsed) ||
     typeof parsed.distributionAllowed !== 'boolean' ||
@@ -172,8 +177,23 @@ test("manifest assigns every catalog asset its intended generic role", () => {
 });
 
 test("published character assets carry licenses separate from the project MIT license", () => {
-  const assetRoot = path.join(__dirname, "..", "public", "assets");
-  const manifest = readManifest(path.join(assetRoot, "manifest.json"));
+  // Read the committed blob so the guard survives local uncommitted edits
+  // (a personal library adds unlicensed private media to the manifest).
+  const repoRoot = path.join(__dirname, "..");
+  let committedJson: string;
+  try {
+    committedJson = execSync("git show HEAD:public/assets/manifest.json", {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    committedJson = fs.readFileSync(
+      path.join(repoRoot, "public", "assets", "manifest.json"),
+      "utf8",
+    );
+  }
+  const manifest = parseManifest(committedJson);
 
   assert.equal(manifest.distributionAllowed, true);
   assert.ok(manifest.assets.length > 0);
