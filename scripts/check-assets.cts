@@ -72,22 +72,25 @@ export function readAssetContract(
 ): AssetContract {
   const library = readPackagedLibrary(libraryPath);
   const roles = new Map<string, 'animation' | 'model'>();
-  for (const model of library.models) {
-    if (roles.has(model.asset_path)) {
+
+  function addRole(assetPath: string, role: 'animation' | 'model'): void {
+    if (roles.has(assetPath)) {
       throw new Error(
-        `Packaged asset path is declared more than once: ${model.asset_path}`,
+        `Packaged asset path is declared more than once: ${assetPath}`,
       );
     }
-    roles.set(model.asset_path, 'model');
+    roles.set(assetPath, role);
+  }
+
+  for (const model of library.models) {
+    addRole(model.asset_path, 'model');
+    if (model.idle_asset_path != null) {
+      addRole(model.idle_asset_path, 'animation');
+    }
   }
   for (const animation of library.animations) {
     for (const assetPath of animation.asset_paths) {
-      if (roles.has(assetPath)) {
-        throw new Error(
-          `Packaged asset path is declared more than once: ${assetPath}`,
-        );
-      }
-      roles.set(assetPath, 'animation');
+      addRole(assetPath, 'animation');
     }
   }
   return {

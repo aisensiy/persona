@@ -83,6 +83,7 @@ function configureFixtureAssets(fixture: AssetFixture): void {
           id: "configured-model",
           model_name: "Configured model",
           asset_path: "models/configured.vrm",
+          idle_asset_path: "animations/configured-idle.vrma",
         },
       ],
       animations: [
@@ -110,6 +111,12 @@ function configureFixtureAssets(fixture: AssetFixture): void {
           source: null,
         },
         {
+          path: "animations/configured-idle.vrma",
+          role: "animation",
+          license: null,
+          source: null,
+        },
+        {
           path: "animations/configured.vrma",
           role: "animation",
           license: null,
@@ -119,6 +126,32 @@ function configureFixtureAssets(fixture: AssetFixture): void {
     }),
   );
 }
+
+test("assigns model idle overrides the animation asset role", (context) => {
+  const fixture = createFixture(context);
+  configureFixtureAssets(fixture);
+
+  const contract = readAssetContract(fixture.libraryPath);
+
+  assert.equal(
+    contract.roles["animations/configured-idle.vrma"],
+    "animation",
+  );
+  assert.deepEqual(validateAssets(fixture), []);
+});
+
+test("rejects a model idle path already declared by an animation", (context) => {
+  const fixture = createFixture(context);
+  configureFixtureAssets(fixture);
+  const library = JSON.parse(fs.readFileSync(fixture.libraryPath, "utf8"));
+  library.models[0].idle_asset_path = "animations/configured.vrma";
+  fs.writeFileSync(fixture.libraryPath, JSON.stringify(library));
+
+  assert.throws(
+    () => readAssetContract(fixture.libraryPath),
+    /declared more than once/,
+  );
+});
 
 test("development accepts an empty catalog and ignored local media", (context) => {
   assert.deepEqual(validateAssets(), []);
