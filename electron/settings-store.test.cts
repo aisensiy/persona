@@ -59,6 +59,7 @@ function writePackagedLibrary(root: string): string {
           id: "configured-model",
           model_name: "Configured model",
           asset_path: "models/configured.vrm",
+          idle_asset_path: "animations/idle-configured.vrma",
         },
       ],
       animations: [
@@ -75,6 +76,29 @@ function writePackagedLibrary(root: string): string {
   );
   return packagedLibraryPath;
 }
+
+test("resolves packaged model idle overrides without assigning one to user models", (context) => {
+  const { root, userDataPath } = fixture(context);
+  const packagedLibraryPath = writePackagedLibrary(root);
+  const sourceModel = path.join(root, "assistant.vrm");
+  writeGlb(sourceModel);
+  const store = createSettingsStore({ userDataPath, packagedLibraryPath });
+
+  let snapshot = store.getSnapshot();
+  assert.equal(
+    snapshot.models.find((model) => model.id === "configured-model")
+      ?.idle_asset_url,
+    "./assets/animations/idle-configured.vrma",
+  );
+
+  snapshot = store.importModel({
+    filePath: sourceModel,
+    model_name: "Studio Assistant",
+  });
+  const userModel = snapshot.models.find((model) => model.origin === "user");
+  assert.ok(userModel);
+  assert.equal(Object.hasOwn(userModel, "idle_asset_url"), false);
+});
 
 test("starts with permanent empty Idle and Speaking actions", (context) => {
   const { userDataPath, packagedLibraryPath } = fixture(context);

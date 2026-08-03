@@ -188,6 +188,51 @@ test("resolves explicit and first-model packaged defaults", () => {
   );
 });
 
+test("validates an optional packaged model idle animation path", () => {
+  const library = validatePackagedLibrary({
+    schema_version: 1,
+    default_model_id: "ellen",
+    models: [
+      {
+        id: "ellen",
+        model_name: "艾莲",
+        asset_path: "models/ellen.vrm",
+        idle_asset_path: "animations/idle-ellen.vrma",
+      },
+    ],
+    animations: [],
+  });
+
+  assert.equal(
+    library.models[0]?.idle_asset_path,
+    "animations/idle-ellen.vrma",
+  );
+
+  for (const idle_asset_path of [
+    "../idle.vrma",
+    "/idle.vrma",
+    "animations/idle.vrm",
+  ]) {
+    assert.throws(
+      () =>
+        validatePackagedLibrary({
+          schema_version: 1,
+          default_model_id: "ellen",
+          models: [
+            {
+              id: "ellen",
+              model_name: "艾莲",
+              asset_path: "models/ellen.vrm",
+              idle_asset_path,
+            },
+          ],
+          animations: [],
+        }),
+      /relative \.vrma asset path/,
+    );
+  }
+});
+
 test("infers live roles from reserved animation names and numbered variants", () => {
   assert.equal(inferAnimationType("idle"), "IDLE");
   assert.equal(inferAnimationType("idle-2"), "IDLE");

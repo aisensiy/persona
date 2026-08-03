@@ -18,6 +18,7 @@ export interface PackagedModel {
   id: string;
   model_name: string;
   asset_path: string;
+  idle_asset_path?: string;
 }
 
 export interface PackagedAnimation {
@@ -181,17 +182,28 @@ export function validatePackagedLibrary(value: unknown): PackagedLibrary {
     if (!LIBRARY_ID_PATTERN.test(id)) {
       throw new Error(`Invalid packaged model id: ${id}.`);
     }
+    const model_name = nonEmptyString(
+      modelValue.model_name,
+      `models[${index}].model_name`,
+    );
+    const asset_path = assetPath(
+      modelValue.asset_path,
+      '.vrm',
+      `models[${index}].asset_path`,
+    );
+    const idle_asset_path =
+      modelValue.idle_asset_path == null
+        ? undefined
+        : assetPath(
+            modelValue.idle_asset_path,
+            '.vrma',
+            `models[${index}].idle_asset_path`,
+          );
     return {
       id,
-      model_name: nonEmptyString(
-        modelValue.model_name,
-        `models[${index}].model_name`,
-      ),
-      asset_path: assetPath(
-        modelValue.asset_path,
-        '.vrm',
-        `models[${index}].asset_path`,
-      ),
+      model_name,
+      asset_path,
+      ...(idle_asset_path === undefined ? {} : { idle_asset_path }),
     };
   });
 

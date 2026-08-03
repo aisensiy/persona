@@ -12,6 +12,7 @@ interface PackagedLibraryDocument {
     id: string;
     model_name: string;
     asset_path: string;
+    idle_asset_path?: string;
   }>;
   animations: Array<{
     id: string;
@@ -226,6 +227,9 @@ export async function loadPackagedSettingsFallback(): Promise<PersonaSettingsSna
       origin: 'packaged',
       removable: false,
       asset_url: packagedAssetUrl(model.asset_path),
+      ...(model.idle_asset_path == null
+        ? {}
+        : { idle_asset_url: packagedAssetUrl(model.idle_asset_path) }),
     })),
     animations: [
       ...SYSTEM_ACTIONS.filter((animation) => !configuredIds.has(animation.id)),

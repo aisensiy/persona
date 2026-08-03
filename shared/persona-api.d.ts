@@ -157,6 +157,7 @@ export interface PersonaModelSettings {
   origin: 'packaged' | 'user' | 'hub';
   removable: boolean;
   asset_url: string;
+  idle_asset_url?: string;
 }
 
 export interface PersonaAnimationClipSettings {

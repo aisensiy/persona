@@ -10,6 +10,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('packaged model settings', () => {
+  it('resolves an optional model idle animation URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          schema_version: 1,
+          default_model_id: 'ellen',
+          models: [
+            {
+              id: 'ellen',
+              model_name: '艾莲',
+              asset_path: 'models/ellen.vrm',
+              idle_asset_path: 'animations/idle-ellen.vrma',
+            },
+          ],
+          animations: [],
+        }),
+      }),
+    );
+
+    const snapshot = await loadPackagedSettingsFallback();
+
+    expect(snapshot.models[0]).toMatchObject({
+      id: 'ellen',
+      asset_url: './assets/models/ellen.vrm',
+      idle_asset_url: './assets/animations/idle-ellen.vrma',
+    });
+  });
+});
+
 describe('lighting settings', () => {
   it('fills every default when a stored model profile is partial', () => {
     expect(

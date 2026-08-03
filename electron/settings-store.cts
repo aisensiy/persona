@@ -991,6 +991,9 @@ export function createSettingsStore({
       origin: "packaged",
       removable: false,
       asset_url: packagedAssetUrl(model.asset_path),
+      ...(model.idle_asset_path == null
+        ? {}
+        : { idle_asset_url: packagedAssetUrl(model.idle_asset_path) }),
     }));
     const userModels: AvailableModel[] = state.models
       .filter((model) =>
